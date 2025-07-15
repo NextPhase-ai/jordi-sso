@@ -9,9 +9,7 @@ from msal import ConfidentialClientApplication
 from dotenv import load_dotenv
 load_dotenv()
 
-# ---------------------------------------------------------------------
 # Load env vars (raise if missing to fail fast)
-# ---------------------------------------------------------------------
 TENANT_ID          = os.getenv("AZURE_TENANT_ID")
 CLIENT_ID          = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET      = os.getenv("AZURE_CLIENT_SECRET")
@@ -20,9 +18,8 @@ DEFAULT_SCOPES     = os.getenv("AZURE_SCOPES", "openid profile email offline_acc
 
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 
-# ---------------------------------------------------------------------
-# Simple in‑memory cache.  Replace with persistent cache for production.
-# ---------------------------------------------------------------------
+# Simple in‑memory cache.
+# @TO-DO: Replace it with persistent cache for production.
 _token_cache: Dict[str, Dict] = {}  # key = user_id/email, value = token dict
 
 
@@ -34,9 +31,7 @@ def _build_app() -> ConfidentialClientApplication:
     )
 
 
-# ---------------------------------------------------------------------
 # Public helpers
-# ---------------------------------------------------------------------
 def acquire_token_interactive(user_identifier: str) -> Dict:
     """
     *Development‑only* helper. Launches the system browser so the user can sign in.
@@ -48,7 +43,7 @@ def acquire_token_interactive(user_identifier: str) -> Dict:
     auth_url = flow["auth_uri"]
     print(f"[AzureAuth] Opening browser for user login: {auth_url}")
 
-    # In Chainlit you might instead present this URL as a link element
+    # In Chainlit, you might instead present this URL as a link element
     import webbrowser
     webbrowser.open(auth_url)
 
@@ -86,9 +81,7 @@ def get_access_token(user_identifier: str, scopes: Optional[list[str]] = None) -
     raise RuntimeError("No valid Azure token; user must sign in.")
 
 
-# ---------------------------------------------------------------------
 # Internals
-# ---------------------------------------------------------------------
 def _augment_with_expiry(token_dict: Dict) -> Dict:
     """
     MSAL returns `expires_in` (seconds). Convert to absolute epoch for quick check.
