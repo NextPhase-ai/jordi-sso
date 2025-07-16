@@ -1,0 +1,11 @@
+chainlit~=2.6.0
+langchain~=0.3.26
+langchain-openai~=0.3.28
+langchain-community~=0.3.27
+O365~=2.1.4
+PyPDF2~=3.0.1
+SQLAlchemy~=2.0.41
+langchain-core~=0.3.68
+streamlit~=1.46.1
+snowflake-connector-python
+SQLAlchemy
