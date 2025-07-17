@@ -19,6 +19,8 @@ AUTHORITY     = os.getenv("AZURE_AUTHORITY")
 REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI")
 # SCOPE         = ["openid", "profile", "email"]
 SCOPE = []
+
+
 msal_app = msal.ConfidentialClientApplication(
     CLIENT_ID,
     client_credential=CLIENT_SECRET,
