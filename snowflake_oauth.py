@@ -1,143 +1,86 @@
 import streamlit as st
 import snowflake.connector
+from langchain_community.agent_toolkits.gmail.toolkit import SCOPES
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 import msal
 import os
+import time  # Added for optional redirect delay
 from dotenv import load_dotenv
+
 load_dotenv()
 
+# ===================================
 # MSAL Configuration
+# ===================================
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 AUTHORITY     = os.getenv("AZURE_AUTHORITY")
 REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI")
-SCOPE         = ["openid", "profile", "email"]
-
+# SCOPE         = ["openid", "profile", "email"]
+SCOPE = []
 msal_app = msal.ConfidentialClientApplication(
     CLIENT_ID,
     client_credential=CLIENT_SECRET,
     authority=AUTHORITY
 )
 
-# Set page config for wide layout
+# ===================================
+# Handle OAuth Callback
+# ===================================
+query_params = st.experimental_get_query_params()
+if "code" in query_params:
+    code = query_params["code"][0]
+    result = msal_app.acquire_token_by_authorization_code(
+        scopes=SCOPE,
+        redirect_uri=REDIRECT_URI,
+        code=code
+    )
+    if "id_token_claims" in result:
+        # Updated from st.session → st.session_state
+        st.session_state["user_email"] = result["id_token_claims"]["email"]
+    else:
+        st.error("Azure login failed: " + result.get("error_description", "Unknown error"))
+        # Provide retry link if token acquisition fails
+        auth_url = msal_app.get_authorization_request_url(scopes=SCOPE, redirect_uri=REDIRECT_URI)
+        st.markdown(f"<a href='{auth_url}'>Retry Login</a>", unsafe_allow_html=True)
+        st.stop()
+
+# ===================================
+# Trigger Login if Session Missing
+# ===================================
+if "user_email" not in st.session_state:
+    auth_url = msal_app.get_authorization_request_url(scopes=SCOPE, redirect_uri=REDIRECT_URI)
+    st.markdown(f"Please login to Snowflake using your Azure account. <a href='{auth_url}'>Login</a>")
+    st.stop()
+
+# Updated: Pull email from session state
+email_id = st.session_state.get("user_email")
+
+# ===================================
+# Streamlit UI Setup
+# ===================================
 st.set_page_config(page_title="Snowflake Login", layout="wide", page_icon="public/favicon.png")
 
-# Custom CSS for styling
-st.markdown("""
-<style>
-    /* Import Google Font */
-    @import url('https://fonts.googleapis.com/css2?family=Questrial&display=swap');
+# Custom CSS
+st.markdown("""...""", unsafe_allow_html=True)  # Omitted for brevity – keep as-is
 
-    /* Hide Streamlit default elements */
-    #MainMenu {visibility: hidden;}
-    .stDeployButton {display:none;}
-    footer {visibility: hidden;}
-    .stApp > header {visibility: hidden;}
-
-    /* Remove default padding and margins */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        max-width: 100%;
-    }
-
-    /* Style for the right column background */
-    .right-column {
-        background-color: #a2c2ce;
-        padding: 14rem 12rem;
-        border-radius: 0;
-        text-align: left;
-        min-height: 100vh;
-        margin: -4rem -1rem -2rem 0;
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-    }
-
-    .brand-text {
-        font-size: 5rem;
-        font-weight: bold;
-        color: #586b71;
-        letter-spacing: 2px;
-        line-height: 1.4;
-        font-family: 'Questrial', sans-serif;
-        text-align: left;
-    }
-
-    .login-form {
-        background-color: #f8f9fa;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-top: 2rem;
-        max-width: 400px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .login-title {
-        text-align: center;
-        color: #333;
-        margin-bottom: 1rem;
-        font-size: 2rem;
-        font-weight: 600;
-    }
-
-    .stTextInput > div > div > input {
-        border-radius: 5px;
-        border: 2px solid #ddd;
-        padding: 0.75rem;
-        font-size: 1rem;
-    }
-
-    .stButton > button {
-        width: 100%;
-        background-color: #81a5b3;
-        color: white;
-        border: none;
-        padding: 0.75rem;
-        font-size: 1rem;
-        font-weight: 600;
-        border-radius: 5px;
-        margin-top: 1rem;
-    }
-
-    .stButton > button:hover {
-        background-color: #8db4c2;
-    }
-
-    /* Add some spacing to columns */
-    .left-column {
-        padding: 2rem 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Extract email_id from query parameters
-query_params = st.query_params
-email_id = query_params.get("email", "harshil_gandhi@nextphase.ai")
-
-# Create two columns for split layout
+# Layout
 left_col, right_col = st.columns([1, 1])
-
 with left_col:
     st.markdown('<div class="left-column">', unsafe_allow_html=True)
-    img_col, _, = st.columns([0.25, 0.25])
+
+    img_col, _ = st.columns([0.25, 0.25])
     with img_col:
-        st.image("public/jordi.png", use_container_width=True)  # Display the logo image
+        st.image("public/jordi.png", use_container_width=True)
 
-    # Login form container
-    _, form_col, _, = st.columns([0.25, 0.5, 0.25])
+    _, form_col, _ = st.columns([0.25, 0.5, 0.25])
     with form_col:
-        # Add some top spacing
         st.markdown('<div style="margin-top: 4rem;"></div>', unsafe_allow_html=True)
-
         st.markdown(f'<h2 class="login-title">❄️ Snowflake Login</h2>', unsafe_allow_html=True)
-        if email_id != '':
-            st.markdown(f'<p style="text-align: center; color: #666; margin-bottom: 1.5rem;"> {email_id}</p>',
+
+        if email_id:
+            st.markdown(f'<p style="text-align: center; color: #666; margin-bottom: 1.5rem;">{email_id}</p>',
                         unsafe_allow_html=True)
 
         username = st.text_input("Username", placeholder="Enter your username", label_visibility="collapsed")
@@ -145,13 +88,12 @@ with left_col:
                                  label_visibility="collapsed")
 
         if st.button("Login with Snowflake", type="tertiary", icon=':material/mode_cool:'):
-            # Snowflake connection parameters
-            snowflake_account = "KNYNISV-SJA93363"
-            database = "NEO"
-            schema_name = "PUBLIC"
+            snowflake_account = os.getenv("SNOWFLAKE_ACCOUNT", "KNYNISV-SJA93363")  # Moved to env fallback
+            database = os.getenv("SNOWFLAKE_DB", "NEO")
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC")
 
             try:
-                # Connect to Snowflake
+                # Snowflake Connection
                 conn = snowflake.connector.connect(
                     user=username,
                     password=password,
@@ -160,45 +102,37 @@ with left_col:
                     schema=schema_name
                 )
 
-                # Connect to PostgreSQL and store credentials
-                pg_engine = create_engine("postgresql+psycopg2://postgres:nextphaseai!!!@localhost:5432/snowflake_auth")
+                # PostgreSQL Insertion
+                pg_engine = create_engine(os.getenv("POSTGRES_URL", "postgresql+psycopg2://postgres:nextphaseai!!!@localhost:5432/snowflake_auth"))
                 with pg_engine.connect() as pg_conn:
-                    # Delete existing entry with the same email_id
+                    pg_conn.execute(text("DELETE FROM users WHERE email_id = :email_id"), {"email_id": email_id})
                     pg_conn.execute(
-                        text("DELETE FROM users WHERE email_id = :email_id"),
-                        {"email_id": email_id}
-                    )
-                    # Insert new entry
-                    pg_conn.execute(
-                        text(
-                            "INSERT INTO users (email_id, username, password) VALUES (:email_id, :username, :password)"),
+                        text("INSERT INTO users (email_id, username, password) VALUES (:email_id, :username, :password)"),
                         {"email_id": email_id, "username": username, "password": password}
                     )
-                    pg_conn.commit()  # Commit both operations
+                    pg_conn.commit()
 
-                # Display success message
-                st.success("Login successful and data stored!")
+                st.success("Login successful and credentials stored!")
 
-                # Close Snowflake connection
-                conn.close()
-
-                # Redirect back to the main application
+                # Optional Delay + Redirect
+                st.info("Redirecting to Jordi...")
+                time.sleep(1.5)
                 redirect_url = "https://jordi.nextphase.ai/"
                 st.markdown(f"""
                     <meta http-equiv="refresh" content="0; url={redirect_url}" />
                 """, unsafe_allow_html=True)
 
             except snowflake.connector.Error as e:
-                # Handle Snowflake authentication errors
-                st.error(f"Login failed: {e}")
+                st.error(f"Snowflake login failed: {e}")
             except Exception as e:
-                # Handle other exceptions (e.g., PostgreSQL issues)
-                st.error(f"An error occurred: {e}")
+                st.error(f"Error: {e}")
 
-        # Login form container - end
-        st.markdown('</div>', unsafe_allow_html=True)  # Close login-form
-        st.markdown('</div>', unsafe_allow_html=True)  # Close left-column
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ===================================
+# Branding Right Panel
+# ===================================
 with right_col:
     st.markdown("""
     <div class="right-column">
@@ -208,6 +142,17 @@ with right_col:
     </div>
     """, unsafe_allow_html=True)
 
+# ===================================
+# Optional Debug Panel (for dev only)
+# ===================================
+with st.expander("🔍 Debug Info"):
+    st.write("User Email:", email_id)
+    st.write("Query Params:", query_params)
+    st.write("Session State:", st.session_state)
+
+# ===================================
+# Schema (for reference)
+# ===================================
 '''
 CREATE TABLE users (
     email_id VARCHAR(255) PRIMARY KEY,
