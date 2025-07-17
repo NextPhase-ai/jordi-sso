@@ -1,0 +1,43 @@
+/* custom.css */
+.logo {
+    width: 50% !important; /* Adjust the width as needed */
+    height: auto; /* Maintain aspect ratio */
+}
+button {
+    border-color: hsl(197 33% 53%); /* Adjust this HSL value for your desired blue */
+}
+
+
+/* custom.css */
+/* Hide the favicon image */
+img[src*="favicon"] {
+    display: none; /* This will hide the favicon image */
+}
+a.watermark {
+    display: none !important;
+}
+
+
+/* Set the custom image on the right half of the screen */
+.relative.hidden.bg-muted.lg\:block {
+    background-image: url('/public/logo3.png'); /* Path to your custom image */
+    background-size: contain; /* Adjust to contain the image within the element */
+    background-repeat: repeat; /* Prevent the image from repeating */
+    background-position: center; /* Center the image */
+    width: 50%; /* Set width to 50% for the right half */
+    height: 100%; /* Set height to 100% of the container */
+    position: absolute; /* Ensure it covers the area */
+    top: 0; /* Align to the top */
+    right: 0; /* Align to the right */
+}
+
+
+
+
+
+
+
+/* Target the message containing the custom element */
+.react-markdown > p {
+    display: inline-block; /* Ensure the paragraph only takes up the space it needs */
+}
