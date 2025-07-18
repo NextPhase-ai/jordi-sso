@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 import msal
 import os
-import time  # Added for optional redirect delay
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,9 +17,7 @@ CLIENT_ID     = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 AUTHORITY     = os.getenv("AZURE_AUTHORITY")
 REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI")
-# SCOPE         = ["openid", "profile", "email"]
 SCOPE = ["User.Read"]
-
 
 msal_app = msal.ConfidentialClientApplication(
     CLIENT_ID,
@@ -39,11 +37,10 @@ if "code" in query_params:
         code=code
     )
     if "id_token_claims" in result:
-        # Updated from st.session → st.session_state
+        # ✅ CHANGE: Store user email from Azure ID token into session state
         st.session_state["user_email"] = result["id_token_claims"]["email"]
     else:
         st.error("Azure login failed: " + result.get("error_description", "Unknown error"))
-        # Provide retry link if token acquisition fails
         auth_url = msal_app.get_authorization_request_url(scopes=SCOPE, redirect_uri=REDIRECT_URI)
         st.markdown(f"<a href='{auth_url}'>Retry Login</a>", unsafe_allow_html=True)
         st.stop()
@@ -56,8 +53,15 @@ if "user_email" not in st.session_state:
     st.markdown(f"Please login to Snowflake using your Azure account. <a href='{auth_url}'>Login</a>")
     st.stop()
 
-# Updated: Pull email from session state
+# ✅ CHANGE: Enforce session-based identity only (no fallback input)
 email_id = st.session_state.get("user_email")
+
+# 🛡️ ADDITION: Guard if email missing after supposed login
+if not email_id:
+    st.error("Session expired or invalid. Please login again.")
+    auth_url = msal_app.get_authorization_request_url(scopes=SCOPE, redirect_uri=REDIRECT_URI)
+    st.markdown(f"<a href='{auth_url}'>Login Again</a>", unsafe_allow_html=True)
+    st.stop()
 
 # ===================================
 # Streamlit UI Setup
@@ -65,7 +69,7 @@ email_id = st.session_state.get("user_email")
 st.set_page_config(page_title="Snowflake Login", layout="wide", page_icon="public/favicon.png")
 
 # Custom CSS
-st.markdown("""...""", unsafe_allow_html=True)  # Omitted for brevity – keep as-is
+st.markdown("""...""", unsafe_allow_html=True)  # Keep unchanged
 
 # Layout
 left_col, right_col = st.columns([1, 1])
@@ -85,12 +89,13 @@ with left_col:
             st.markdown(f'<p style="text-align: center; color: #666; margin-bottom: 1.5rem;">{email_id}</p>',
                         unsafe_allow_html=True)
 
+        # Snowflake login form
         username = st.text_input("Username", placeholder="Enter your username", label_visibility="collapsed")
         password = st.text_input("Password", type="password", placeholder="Enter your password",
                                  label_visibility="collapsed")
 
         if st.button("Login with Snowflake", type="tertiary", icon=':material/mode_cool:'):
-            snowflake_account = os.getenv("SNOWFLAKE_ACCOUNT", "KNYNISV-SJA93363")  # Moved to env fallback
+            snowflake_account = os.getenv("SNOWFLAKE_ACCOUNT", "KNYNISV-SJA93363")
             database = os.getenv("SNOWFLAKE_DB", "NEO")
             schema_name = os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC")
 
@@ -116,7 +121,7 @@ with left_col:
 
                 st.success("Login successful and credentials stored!")
 
-                # Optional Delay + Redirect
+                # Redirect
                 st.info("Redirecting to Jordi...")
                 time.sleep(1.5)
                 redirect_url = "https://jordi.nextphase.ai/"
