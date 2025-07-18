@@ -19,6 +19,13 @@ AUTHORITY     = os.getenv("AZURE_AUTHORITY")
 REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI")
 SCOPE = ["User.Read"]
 
+# Once admin consent and full SSO approved
+# SCOPE = [
+#     "openid",          # for ID token
+#     "offline_access",  # for refresh tokens (not applicable in Streamlit POC)
+#     "User.Read",       # basic profile info from Microsoft Graph
+# ]
+
 msal_app = msal.ConfidentialClientApplication(
     CLIENT_ID,
     client_credential=CLIENT_SECRET,
