@@ -1,27 +1,24 @@
 import streamlit as st
 import snowflake.connector
-from sqlalchemy import create_engine
-from sqlalchemy.sql import text
+from sqlalchemy import create_engine, text
 import msal
 import os
 import time
+from urllib.parse import quote
 from dotenv import load_dotenv
 
 from jwt_utils import JWTManager
 
-# ===================================
+# ==========================
 # Load environment variables
-# ===================================
+# ==========================
 load_dotenv()
 
-# ===================================
-# MSAL Configuration
-# ===================================
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 AUTHORITY     = os.getenv("AZURE_AUTHORITY")
 REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI")
-SCOPE = ["User.Read"]
+SCOPE         = ["User.Read"]  # For POC: no admin consent needed
 
 # Once admin consent and full SSO approved
 # SCOPE = [
@@ -30,23 +27,24 @@ SCOPE = ["User.Read"]
 #     "User.Read",       # basic profile info from Microsoft Graph
 # ]
 
-# ===================================
-# JWT Setup
-# ===================================
 JWT_SECRET = os.getenv("JWT_SECRET")
 jwt_manager = JWTManager(secret_key=JWT_SECRET)
 
-# ===================================
-# Handle OAuth Callback and JWT creation
-# ===================================
-query_params = st.experimental_get_query_params()
-if "code" in query_params:
-    code = query_params["code"][0]
-    msal_app = msal.ConfidentialClientApplication(
+def get_msal_app():
+    return msal.ConfidentialClientApplication(
         CLIENT_ID,
         client_credential=CLIENT_SECRET,
         authority=AUTHORITY
     )
+
+# ==========================
+# OAuth Callback Handling
+# ==========================
+query_params = st.experimental_get_query_params()
+if "code" in query_params:
+    code = query_params["code"][0]
+    msal_app = get_msal_app()
+
     result = msal_app.acquire_token_by_authorization_code(
         scopes=SCOPE,
         redirect_uri=REDIRECT_URI,
@@ -57,6 +55,7 @@ if "code" in query_params:
         if user_email:
             token = jwt_manager.create_token(email=user_email)
             st.session_state["jwt_token"] = token
+            st.session_state["email_id"] = user_email
             st.experimental_rerun()
         else:
             st.error("Azure login failed: Email claim missing.")
@@ -65,9 +64,9 @@ if "code" in query_params:
         st.error("Azure login failed: " + result.get("error_description", "Unknown error"))
         st.stop()
 
-# ===================================
-# Validate JWT token in session state
-# ===================================
+# ==========================
+# JWT Session Check
+# ==========================
 token = st.session_state.get("jwt_token")
 if not token:
     msal_app = msal.ConfidentialClientApplication(
@@ -76,7 +75,7 @@ if not token:
         authority=AUTHORITY
     )
     auth_url = msal_app.get_authorization_request_url(scopes=SCOPE, redirect_uri=REDIRECT_URI)
-    st.markdown(f"🔐 <a href='{auth_url}'>Please login using Microsoft Entra ID</a>", unsafe_allow_html=True)
+    st.markdown(f"<a href='{auth_url}'>Please login using Microsoft Entra ID</a>", unsafe_allow_html=True)
     st.stop()
 
 payload = jwt_manager.decode_token(token)
@@ -97,12 +96,15 @@ if not email_id:
     st.error("Email claim missing in token payload.")
     st.stop()
 
-# ===================================
-# Streamlit UI Setup
-# ===================================
+st.session_state["email_id"] = email_id
+
+# ==========================
+# UI Layout
+# ==========================
 st.set_page_config(page_title="Snowflake Login", layout="wide", page_icon="public/favicon.png")
 
 left_col, right_col = st.columns([1, 1])
+
 with left_col:
     st.markdown(f'<p style="text-align: center; color: #666; margin-bottom: 1.5rem;">{email_id}</p>', unsafe_allow_html=True)
 
@@ -115,7 +117,7 @@ with left_col:
         schema_name = os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC")
 
         try:
-            # Attempt Snowflake login
+            # Validate Snowflake credentials
             conn = snowflake.connector.connect(
                 user=username,
                 password=password,
@@ -124,7 +126,7 @@ with left_col:
                 schema=schema_name
             )
 
-            # Store user creds in PostgreSQL
+            # Save credentials to PostgreSQL
             pg_engine = create_engine(os.getenv("POSTGRES_URL", "postgresql+psycopg2://postgres:nextphaseai!!!@localhost:5432/snowflake_auth"))
             with pg_engine.connect() as pg_conn:
                 pg_conn.execute(text("DELETE FROM users WHERE email_id = :email_id"), {"email_id": email_id})
@@ -134,11 +136,11 @@ with left_col:
                 )
                 pg_conn.commit()
 
+            # Redirect to Chainlit with encoded JWT
             st.success("Login successful! Redirecting to Jordi Assistant...")
             time.sleep(1.5)
-
-            # Final Chainlit redirect with JWT
-            redirect_url = f"https://jordi.nextphase.ai/?token={token}"
+            encoded_token = quote(token)
+            redirect_url = f"https://jordi.nextphase.ai/?token={encoded_token}"
             st.markdown(f'<meta http-equiv="refresh" content="0; url={redirect_url}" />', unsafe_allow_html=True)
 
         except snowflake.connector.Error as e:
@@ -155,18 +157,26 @@ with right_col:
     </div>
     """, unsafe_allow_html=True)
 
-# ===================================
-# Debug Panel (Dev-Only)
-# ===================================
-with st.expander("🛠 Debug Info"):
+# ==========================
+# Optional: Logout
+# ==========================
+with st.sidebar:
+    if st.button("Logout"):
+        st.session_state.pop("jwt_token", None)
+        st.experimental_rerun()
+
+# ==========================
+# Dev Debug Panel
+# ==========================
+with st.expander("Debug Info"):
     st.write("User Email:", email_id)
-    st.write("Session Token Payload:", payload)
+    st.write("Token Payload:", payload)
     st.write("Raw Query Params:", query_params)
     st.write("Session State:", st.session_state)
 
-# ===================================
-# Reference: PostgreSQL Table Schema
-# ===================================
+# ==========================
+# PostgreSQL Reference
+# ==========================
 '''
 CREATE TABLE users (
     email_id VARCHAR(255) PRIMARY KEY,

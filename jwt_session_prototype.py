@@ -1,77 +1,46 @@
+# jwt_session_prototype.py
+
 import streamlit as st
 import jwt
-import datetime
-from urllib.parse import urlencode, urlparse, parse_qs
+import time
+import os
+from urllib.parse import quote_plus
+from dotenv import load_dotenv
 
-# ==============================
-# 🔐 JWT Configuration
-# ==============================
-JWT_SECRET = "super-secret-key"  # In prod, store in environment variable
-JWT_ALGORITHM = "HS256"
-JWT_EXP_MINUTES = 15  # Token valid for 15 minutes
+# 🔐 Load secret from .env or fallback
+load_dotenv()
+SECRET_KEY = os.getenv("JWT_SECRET", "my_secret_key")
 
-# ==============================
-# 🔁 Helper Functions
-# ==============================
-def generate_jwt(user_email: str) -> str:
+# 🧭 App layout
+st.set_page_config(page_title="JWT Token Generator", layout="centered")
+st.title("🔐 Generate JWT Token for Chainlit")
+
+# 📩 Email input
+email = st.text_input("Enter your email")
+
+# 🕒 Time-to-live selector
+ttl_minutes = st.slider("Token TTL (in minutes)", 5, 120, 30)
+
+# 🚀 Generate token
+if st.button("Generate Token"):
+    iat = int(time.time())
+    exp = iat + ttl_minutes * 60
     payload = {
-        "email": user_email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=JWT_EXP_MINUTES),
-        "iat": datetime.datetime.utcnow()
+        "email": email,
+        "iat": iat,
+        "exp": exp
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return token
 
-def decode_jwt(token: str) -> dict:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        st.warning("Token has expired. Please login again.")
-    except jwt.InvalidTokenError:
-        st.error("Invalid token. Please login again.")
-    return None
+        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+        token_str = token if isinstance(token, str) else token.decode("utf-8")
+        url_token = quote_plus(token_str)
 
-def update_query_params(token: str):
-    st.experimental_set_query_params(token=token)
+        st.success("✅ JWT Token Generated Successfully!")
+        st.code(token_str, language="text")
 
-# ==============================
-# 🌐 Extract Token from URL
-# ==============================
-query_params = st.experimental_get_query_params()
-token = query_params.get("token", [None])[0]
-
-# ==============================
-# 🧪 Streamlit UI
-# ==============================
-st.set_page_config(page_title="JWT Session Prototype", layout="centered")
-
-st.title("🔐 JWT Session Prototype")
-
-if not token:
-    st.info("🔓 Simulate login to generate a JWT token.")
-    if st.button("🔐 Simulate Login"):
-        test_email = "user@nextphase.ai"
-        new_token = generate_jwt(test_email)
-        update_query_params(new_token)
-        st.rerun()
-else:
-    decoded = decode_jwt(token)
-    if decoded:
-        st.success("✅ Token is valid!")
-        st.write("**Decoded Email:**", decoded["email"])
-        st.write("**Token Expires At:**", datetime.datetime.fromtimestamp(decoded["exp"]))
-        if st.button("🚪 Logout"):
-            st.experimental_set_query_params()  # Clear token from URL
-            st.rerun()
-    else:
-        st.error("⚠️ Invalid or expired session.")
-        if st.button("🔁 Try Login Again"):
-            st.experimental_set_query_params()
-            st.rerun()
-
-# ==============================
-# 🔍 Debug Panel (Optional)
-# ==============================
-with st.expander("🛠 Debug Info"):
-    st.write("Query Params:", query_params)
-    st.write("Raw Token:", token)
+        chainlit_url = f"http://localhost:8000/?token={url_token}"
+        st.markdown(f"🔗 [Open Chainlit with Token]({chainlit_url})")
+        st.text("Paste this token in Chainlit if not redirected automatically.")
+    except Exception as e:
+        st.error(f"Error generating JWT: {str(e)}")

@@ -1,0 +1,20 @@
+# chainlit.toml
+
+[project]
+name = "JORDI App"
+description = "Chainlit Assistant with JWT Authentication"
+author = "Udayan Sawant"
+
+[UI]
+name = "JORDI"
+theme = "dark"
+hide_cot = false
+default_cot = false
+show_prompt_box = true
+collapse_content = false
+
+[logging]
+level = "INFO"
+
+[development]
+port = 8000
